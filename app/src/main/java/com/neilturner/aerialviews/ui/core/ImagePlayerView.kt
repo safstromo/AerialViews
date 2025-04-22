@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build.VERSION.SDK_INT
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatImageView
+import androidx.exifinterface.media.ExifInterface
 import coil3.EventListener
 import coil3.ImageLoader
 import coil3.decode.Decoder
@@ -15,6 +16,7 @@ import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.target.ImageViewTarget
+import coil3.util.DebugLogger
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.ImmichAuthType
 import com.neilturner.aerialviews.models.enums.PhotoScale
@@ -35,7 +37,9 @@ import kotlinx.coroutines.launch
 import me.kosert.flowbus.GlobalBus
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import timber.log.Timber
+import java.io.InputStream
 import kotlin.time.Duration.Companion.milliseconds
 
 class ImagePlayerView : AppCompatImageView {
@@ -101,7 +105,9 @@ class ImagePlayerView : AppCompatImageView {
     private val imageLoader =
         ImageLoader
             .Builder(context)
-            .memoryCache(memoryCache)
+            .logger(DebugLogger())
+            .memoryCache(null)
+            .diskCache(null)
             .eventListener(eventLister)
             .components {
                 add(OkHttpNetworkFetcherFactory(buildOkHttpClient()))
@@ -119,13 +125,18 @@ class ImagePlayerView : AppCompatImageView {
     private fun buildOkHttpClient(): OkHttpClient {
         val serverConfig = ServerConfig("", ImmichMediaPrefs.validateSsl)
         val okHttpClient = SslHelper().createOkHttpClient(serverConfig)
+        Timber.i("OkHttpClient: $okHttpClient")
         return okHttpClient
             .newBuilder()
+            .addInterceptor(HttpLoggingInterceptor())
             .addInterceptor(ApiKeyInterceptor())
             .build()
     }
 
     private class ApiKeyInterceptor : Interceptor {
+        init {
+            Timber.i("ApiKeyInterceptor: init")
+        }
         override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
             val originalRequest = chain.request()
             val newRequest =
@@ -138,11 +149,13 @@ class ImagePlayerView : AppCompatImageView {
                     }
                     else -> originalRequest
                 }
+            Timber.i("ApiKeyInterceptor Request URL: ${newRequest.url}")
             return chain.proceed(newRequest)
         }
     }
 
     fun setImage(media: AerialMedia) {
+        Timber.i("ImagePlayerView: setImage: ${media.uri}")
         try {
             coroutineScope.launch {
                 when (media.source) {
@@ -154,7 +167,12 @@ class ImagePlayerView : AppCompatImageView {
                     }
 
                     AerialMediaSource.WEBDAV -> {
-                        val stream = ImagePlayerHelper.streamFromWebDavFile(media.uri)
+                        var stream = ImagePlayerHelper.streamFromWebDavFile(media.uri)
+                        stream?.let {
+                            findExifData(it)
+                        }
+
+                        stream = ImagePlayerHelper.streamFromWebDavFile(media.uri)
                         stream?.let {
                             loadImage(it)
                         }
@@ -170,6 +188,11 @@ class ImagePlayerView : AppCompatImageView {
             FirebaseHelper.logExceptionIfRecent(ex.cause)
             listener?.onImageError()
         }
+    }
+
+    private fun findExifData(stream: InputStream) {
+        val data = ExifInterface(stream)
+        Timber.i("Orig date/time: ${data.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)}")
     }
 
     private suspend fun loadImage(data: Any) {

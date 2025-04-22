@@ -9,6 +9,7 @@ core-ktx = "1.16.0"
 activity-ktx = "1.10.1"
 constraintlayout = "2.2.1"
 appcompat = "1.7.0"
+exif = "1.4.0"
 
 firebase-crashlytics-plugin = "3.0.3"
 firebase-perf-plugin = "1.4.2"
@@ -53,6 +54,7 @@ coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutin
 activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity-ktx" }
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+exif = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exif" }
 
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics-ktx", version.ref = "firebase-analytics" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics-ktx", version.ref = "firebase-crashlytics" }
@@ -96,7 +98,7 @@ profileinstaller = { group = "androidx.profileinstaller", name = "profileinstall
 
 [bundles]
 kotlin = ["kotlin-stdlib", "coroutines-core", "coroutines-android", "kotlinx-serialization-json"]
-androidx = ["core-ktx", "leanback", "leanback-preference", "preference-ktx", "activity-ktx", "constraintlayout", "appcompat"]
+androidx = ["core-ktx", "leanback", "leanback-preference", "preference-ktx", "activity-ktx", "constraintlayout", "appcompat", "exif"]
 firebase = ["firebase-analytics", "firebase-crashlytics", "firebase-perf"]
 exoplayer = ["media3-exoplayer", "media3-ui"]
 flowbus = ["flowbus", "flowbus-android"]

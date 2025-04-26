@@ -1,16 +1,11 @@
 package com.neilturner.aerialviews.ui.core
 
 import android.content.Context
-import android.os.Build.VERSION.SDK_INT
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.exifinterface.media.ExifInterface
 import coil3.EventListener
 import coil3.ImageLoader
-import coil3.decode.Decoder
-import coil3.gif.AnimatedImageDecoder
-import coil3.gif.GifDecoder
-import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ErrorResult
 import coil3.request.ImageRequest
@@ -18,26 +13,22 @@ import coil3.request.SuccessResult
 import coil3.target.ImageViewTarget
 import coil3.util.DebugLogger
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
-import com.neilturner.aerialviews.models.enums.ImmichAuthType
 import com.neilturner.aerialviews.models.enums.PhotoScale
 import com.neilturner.aerialviews.models.enums.ProgressBarLocation
 import com.neilturner.aerialviews.models.enums.ProgressBarType
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
-import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.services.InputStreamFetcher
+import com.neilturner.aerialviews.ui.core.ImagePlayerHelper.buildGifDecoder
+import com.neilturner.aerialviews.ui.core.ImagePlayerHelper.buildOkHttpClient
+import com.neilturner.aerialviews.ui.core.ImagePlayerHelper.logger
 import com.neilturner.aerialviews.ui.overlays.ProgressBarEvent
 import com.neilturner.aerialviews.ui.overlays.ProgressState
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.ServerConfig
-import com.neilturner.aerialviews.utils.SslHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.kosert.flowbus.GlobalBus
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import timber.log.Timber
 import java.io.InputStream
 import kotlin.time.Duration.Companion.milliseconds
@@ -96,12 +87,6 @@ class ImagePlayerView : AppCompatImageView {
             }
         }
 
-    private val memoryCache =
-        MemoryCache
-            .Builder()
-            .maxSizePercent(context, 0.0)
-            .build()
-
     private val imageLoader =
         ImageLoader
             .Builder(context)
@@ -115,78 +100,20 @@ class ImagePlayerView : AppCompatImageView {
                 add(buildGifDecoder())
             }.build()
 
-    private fun buildGifDecoder(): Decoder.Factory =
-        if (SDK_INT >= 28) {
-            AnimatedImageDecoder.Factory()
-        } else {
-            GifDecoder.Factory()
-        }
-
-    private fun buildOkHttpClient(): OkHttpClient {
-        val serverConfig = ServerConfig("", ImmichMediaPrefs.validateSsl)
-        val okHttpClient = SslHelper().createOkHttpClient(serverConfig)
-        Timber.i("OkHttpClient: $okHttpClient")
-        return okHttpClient
-            .newBuilder()
-            .addInterceptor(HttpLoggingInterceptor())
-            .addInterceptor(ApiKeyInterceptor())
-            .build()
-    }
-
-    private class ApiKeyInterceptor : Interceptor {
-        init {
-            Timber.i("ApiKeyInterceptor: init")
-        }
-        override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
-            val originalRequest = chain.request()
-            val newRequest =
-                when (ImmichMediaPrefs.authType) {
-                    ImmichAuthType.API_KEY -> {
-                        originalRequest
-                            .newBuilder()
-                            .addHeader("X-API-Key", ImmichMediaPrefs.apiKey)
-                            .build()
-                    }
-                    else -> originalRequest
-                }
-            Timber.i("ApiKeyInterceptor Request URL: ${newRequest.url}")
-            return chain.proceed(newRequest)
-        }
-    }
 
     fun setImage(media: AerialMedia) {
-        Timber.i("ImagePlayerView: setImage: ${media.uri}")
-        try {
-            coroutineScope.launch {
-                when (media.source) {
-                    AerialMediaSource.SAMBA -> {
-                        val stream = ImagePlayerHelper.streamFromSambaFile(media.uri)
-                        stream?.let {
-                            loadImage(it)
-                        }
-                    }
-
-                    AerialMediaSource.WEBDAV -> {
-                        var stream = ImagePlayerHelper.streamFromWebDavFile(media.uri)
-                        stream?.let {
-                            findExifData(it)
-                        }
-
-                        stream = ImagePlayerHelper.streamFromWebDavFile(media.uri)
-                        stream?.let {
-                            loadImage(it)
-                        }
-                    }
-
-                    else -> {
-                        loadImage(media.uri)
-                    }
+        coroutineScope.launch {
+            when (media.source) {
+                AerialMediaSource.SAMBA -> {
+                    loadImage(ImagePlayerHelper.streamFromSambaFile(media.uri))
+                }
+                AerialMediaSource.WEBDAV -> {
+                    loadImage(ImagePlayerHelper.streamFromWebDavFile(media.uri))
+                }
+                else -> {
+                    loadImage(media.uri)
                 }
             }
-        } catch (ex: Exception) {
-            Timber.e(ex, "Exception while trying to load image: ${ex.message}")
-            FirebaseHelper.logExceptionIfRecent(ex.cause)
-            listener?.onImageError()
         }
     }
 
@@ -195,23 +122,19 @@ class ImagePlayerView : AppCompatImageView {
         Timber.i("Orig date/time: ${data.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)}")
     }
 
-    private suspend fun loadImage(data: Any) {
+    private suspend fun loadImage(data: Any?) {
         try {
             val request =
                 ImageRequest
                     .Builder(context)
                     .data(data)
                     .size(this.width, this.height)
-                    // .precision(Precision.INEXACT)
-                    // .scale(Scale.FIT)
                     .target(target)
                     .build()
             imageLoader.execute(request)
         } catch (ex: Exception) {
             Timber.e(ex, "Exception while trying to load image: ${ex.message}")
-            FirebaseHelper.logExceptionIfRecent(ex.cause)
             listener?.onImageError()
-            return
         }
     }
 
